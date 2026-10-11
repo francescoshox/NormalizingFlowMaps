@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+data/
+runs/
+wandb/
+*.pdf
+*.safetensors
+*.msgpack
+*.npz
+*.npy
+.env

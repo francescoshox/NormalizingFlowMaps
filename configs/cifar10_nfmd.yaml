@@ -1,0 +1,44 @@
+name: cifar10_nfmd
+method: nfmd
+stage: nfmd
+seed: 42
+dataset:
+  epoch_samples: 0
+  flip: true
+model:
+  img_size: 32
+  out_channels: 3
+  channels: 256
+  patch_size: 2
+  num_blocks: 8
+  num_layers: 6
+  num_classes: 10
+  precision: bf16
+  attn_impl: causal_xla
+  clip_range: 1.0
+training:
+  epochs: 960
+  batch_size: 256
+  lr: 0.0004
+  warmup_steps: 1954
+  warmup_lr: 1.0e-06
+  emas:
+  - 0.9995
+  - 0.9999
+  log_steps: 100
+  checkpoint_epochs: 60
+objective:
+  s_max: 0.1
+  label_dropout: 0.1
+evaluation:
+  samples: 50000
+  batch_size: 80
+  cfg:
+  - 0.0
+  - 2.8
+  interval:
+  - 0.0
+  - 1.0
+  emas:
+  - 0.9995
+  - 0.9999

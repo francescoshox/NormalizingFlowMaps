@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nfm"
+version = "0.1.0"
+description = "Normalizing Flow Maps: JAX image experiments"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+  "jax==0.10.2", "flax==0.12.7", "optax==0.2.8",
+  "numpy>=2.0", "scipy>=1.14", "PyYAML>=6", "safetensors>=0.5",
+  "Pillow>=11", "requests>=2.32", "tqdm>=4.67",
+]
+
+[project.optional-dependencies]
+cuda = ["jax[cuda12]==0.10.2"]
+eval = ["torch==2.13.0"]
+nfmr = ["lpips-j==0.0.6", "transformers==4.57.6", "torch==2.13.0"]
+wandb = ["wandb>=0.19"]
+dev = ["pytest>=8", "ruff>=0.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["nfm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

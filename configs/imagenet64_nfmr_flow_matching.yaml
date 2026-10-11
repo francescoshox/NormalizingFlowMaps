@@ -1,0 +1,49 @@
+# NFMR stage 1. Detailed collaborator recipe TODOs are in docs/provenance.md.
+name: imagenet64_nfmr_flow_matching
+method: nfmr
+stage: flow_matching
+seed: 0
+dataset:
+  epoch_samples: 1280512
+  flip: false
+model:
+  img_size: 64
+  out_channels: 3
+  channels: 384
+  patch_size: 2
+  num_blocks: 8
+  num_layers: 8
+  num_classes: 1000
+  precision: bf16
+  attn_impl: causal_xla
+  clip_limit: 4.0
+  denoiser_min_clip: 0.05
+training:
+  epochs: 200
+  batch_size: 512
+  lr: 0.0004
+  warmup_steps: 0
+  emas:
+  - 0.999
+  - 0.9995
+  - 0.9999
+  log_steps: 100
+  checkpoint_epochs: 50
+objective:
+  time_mu: -0.8
+  time_sigma: 0.8
+  label_dropout: 0.1
+  clip_target: true
+evaluation:
+  samples: 50000
+  batch_size: 80
+  cfg:
+  - 5.0
+  interval:
+  - 0.0
+  - 1.0
+  emas:
+  - 0.999
+  - 0.9995
+  - 0.9999
+  fm_steps: 50

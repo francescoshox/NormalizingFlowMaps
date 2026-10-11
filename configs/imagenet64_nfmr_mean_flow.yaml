@@ -1,0 +1,63 @@
+# NFMR stage 2. Handoff EMA and auxiliary settings remain provisional.
+name: imagenet64_nfmr_mean_flow
+method: nfmr
+stage: mean_flow
+seed: 0
+dataset:
+  epoch_samples: 1280512
+  flip: false
+model:
+  img_size: 64
+  out_channels: 3
+  channels: 384
+  patch_size: 2
+  num_blocks: 8
+  num_layers: 8
+  num_classes: 1000
+  precision: bf16
+  attn_impl: causal_xla
+  clip_limit: 4.0
+  denoiser_min_clip: 0.05
+training:
+  epochs: 25
+  batch_size: 512
+  lr: 0.0001
+  warmup_steps: 0
+  emas:
+  - 0.999
+  - 0.9995
+  - 0.9999
+  log_steps: 100
+  checkpoint_epochs: 5
+objective:
+  time_mu: -0.8
+  time_sigma: 0.8
+  label_dropout: 0.1
+  clip_target: true
+  norm_eps: 0.01
+  norm_p: 1.0
+  diagonal_prop: 0.5
+  st_uniform: false
+  use_lpips: true
+  lpips_lambda: 0.4
+  use_convnext: true
+  convnext_lambda: 0.1
+  perceptual_min_s: 0.2
+  use_cfg: true
+  cfg_beta: 1.0
+  cfg_scale_max: 7.0
+  expand_batch_for_cfg: true
+evaluation:
+  samples: 50000
+  batch_size: 80
+  cfg:
+  - 4.5
+  interval:
+  - 0.5
+  - 0.9
+  emas:
+  - 0.999
+  - 0.9995
+  - 0.9999
+  fm_steps: 50
+handoff_ema: 0.999

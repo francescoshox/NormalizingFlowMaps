@@ -1,0 +1,33 @@
+Normalizing Flow Maps image implementation
+
+Original NFM contributions are Copyright (c) 2026 NFM contributors and
+licensed under the MIT License; see LICENSE. Inherited code retains its
+upstream copyright notices and license terms, as listed below.
+
+This code branches from the public BiFlow implementation:
+https://github.com/Lyy-iiis/BiFlow
+Copyright (c) Yiyang Lu. MIT License; see LICENSE.
+Adaptations include time conditioning, NFMD/NFMR objectives, adjusted Muon,
+portable attention/JVP, and the self-contained release training/evaluation tools.
+
+nfm/models/convnext.py adapts ConvNeXt V2 code.
+Copyright (c) Meta Platforms, Inc. and affiliates.
+https://github.com/facebookresearch/ConvNeXt-V2
+Its upstream license is reproduced in licenses/ConvNeXt-V2.txt.
+Code uses the MIT portion; separately downloaded pretrained checkpoints have
+their own upstream terms, including the noncommercial terms described there.
+This repository does not redistribute pretrained ConvNeXt weights.
+
+nfm/fid/inception.py and nfm/fid/resize.py are adapted from the JAX-FID
+implementation retained in the experiment source. JAX-FID is distributed
+under Apache 2.0; see licenses/jax-fid.txt.
+https://github.com/matthias-wright/jax-fid
+Inception's normalization/pooling adaptations derive from Flax (Apache 2.0),
+and the Inception architecture port also credits torchvision (BSD-3-Clause).
+See licenses/Flax.txt and licenses/torchvision.txt.
+Downloaded Inception weights are not included in this repository.
+
+The Boltzmann-generator branch derives from Transferable Samplers:
+https://github.com/transferable-samplers/transferable-samplers
+It has its own LICENSE and NOTICE, retaining upstream copyright notices
+and third-party terms alongside the MIT license for NFM contributions.

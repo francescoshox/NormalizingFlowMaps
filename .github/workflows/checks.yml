@@ -1,0 +1,19 @@
+name: JAX release checks
+on: [push, pull_request]
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    env:
+      JAX_PLATFORMS: cpu
+      OPENBLAS_NUM_THREADS: 1
+      OMP_NUM_THREADS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install uv
+      - run: uv sync --frozen --extra dev --extra eval
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync pytest -q
