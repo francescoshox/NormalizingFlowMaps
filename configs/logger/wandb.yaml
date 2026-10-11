@@ -1,0 +1,10 @@
+wandb:
+  _target_: lightning.pytorch.loggers.wandb.WandbLogger
+  project: ${oc.env:WANDB_PROJECT}
+  entity: ${oc.env:WANDB_ENTITY}
+  name: ${task_name}
+  save_dir: ${paths.output_dir}
+  offline: false
+  log_model: false
+  tags: ${tags}
+  job_type: ${task_name}

@@ -1,0 +1,49 @@
+# @package _global_
+defaults:
+  - override /model: transferable_nfmd
+  - override /data: transferable/up_to_8aa
+  - override /trainer: ddp
+task_name: nfmd_transferable_eval
+tags: [nfmd, transferable]
+seed: 50
+num_samples: 10000
+model:
+  nfmd_t_max: 0.05
+  mean_free_prior: false
+  prior:
+    std: 1.0
+  net:
+    channels: 384
+    num_blocks: 8
+    layers_per_block: 8
+    clip_range: 5.0
+  optimizer:
+    lr: 2e-4
+  scheduler:
+    _target_: torch.optim.lr_scheduler.OneCycleLR
+    _partial_: true
+    max_lr: ${model.optimizer.lr}
+    pct_start: 0.05
+    anneal_strategy: cos
+    cycle_momentum: false
+    div_factor: 500.0
+    final_div_factor: 1.0
+  source_energy_config:
+    sample_batch_size: 10240
+    energy_batch_size: 10240
+    grad_batch_size: 10240
+    use_com_adjustment: true
+data:
+  batch_size: 2048
+  com_augmentation: true
+  num_workers: 4
+  pin_memory: true
+callbacks:
+  sampling_evaluation:
+    sampler: ${sampler}
+trainer:
+  devices: 1
+  num_nodes: 1
+  max_epochs: 1000
+  check_val_every_n_epoch: 50
+  limit_train_batches: 250

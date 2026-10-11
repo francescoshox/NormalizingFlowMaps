@@ -1,0 +1,5 @@
+scratch_dir: ${oc.env:NFMD_CACHE_DIR,${paths.work_dir}/.cache}
+data_dir: ${oc.env:NFMD_DATA_DIR,${paths.work_dir}/data}
+log_dir: ${oc.env:NFMD_OUTPUT_DIR,${paths.work_dir}/outputs}
+output_dir: ${hydra:runtime.output_dir}
+work_dir: ${hydra:runtime.cwd}

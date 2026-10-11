@@ -1,0 +1,6 @@
+_target_: transferable_samplers.nn.tarflow.twotime_itarflow.TwoTimeITarFlowMolecules
+in_channels: 3
+channels: 256
+patch_size: 1
+clip_range: 5.0
+logdet_sum: false

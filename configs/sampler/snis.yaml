@@ -1,0 +1,3 @@
+_target_: transferable_samplers.samplers.snis_sampler.SNISSampler
+num_samples: ${num_samples}
+logw_quantile_filter: 0.002

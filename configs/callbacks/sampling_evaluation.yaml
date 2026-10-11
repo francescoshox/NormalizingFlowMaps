@@ -1,0 +1,5 @@
+sampling_evaluation:
+  _target_: transferable_samplers.callbacks.sampling_evaluation_callback.SamplingEvaluationCallback
+  output_dir: ${paths.output_dir}/evaluation
+  evaluator:
+    _target_: transferable_samplers.evaluation.evaluator.PeptideEnsembleEvaluator

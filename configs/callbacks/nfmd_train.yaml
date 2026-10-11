@@ -1,0 +1,10 @@
+defaults:
+  - model_summary
+  - lr_monitor
+  - model_checkpoint_resampled_energy_w2
+  - model_checkpoint_resampled_torus_w2
+  - model_checkpoint_eval_loss
+  - model_checkpoint_last
+  - sampling_evaluation
+  - loss_evaluation
+  - ema_weight_averaging

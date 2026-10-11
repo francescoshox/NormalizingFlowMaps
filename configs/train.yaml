@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - _self_
+  - data: single_system/GYDPETGTWG
+  - model: nfmd
+  - sampler: snis
+  - callbacks: default_train
+  - logger: many_loggers
+  - trainer: ddp
+  - paths: default
+  - extras: default
+  - hydra: default
+  - experiment: nfmd/GYDPETGTWG_train
+task_name: train
+tags: [nfmd]
+seed: 47
+torch_num_threads: 2
+num_samples: 200000
+init_hf_state_dict_path: null
+init_ckpt_path: null

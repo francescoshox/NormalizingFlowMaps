@@ -1,0 +1,11 @@
+_target_: transferable_samplers.samplers.smc_sampler.SMCSampler
+num_samples: ${num_samples}
+init_eps: 1e-5
+num_annealing_steps: 500
+ess_threshold: 0.5
+resampling_method: multinomial
+energy_cutoff_filter: -300.0
+logw_quantile_filter: 0.002
+use_metropolis: false
+adaptive_step_size: false
+log_traj_freq: 50

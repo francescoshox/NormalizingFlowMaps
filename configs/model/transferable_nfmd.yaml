@@ -1,0 +1,29 @@
+defaults:
+  - net: transferable_twotime_itarflow
+_target_: transferable_samplers.models.transferable_nfmd_module.TransferableNFMDModule
+compile_net: false
+train_from_buffer: false
+mean_free_prior: false
+objective: nfmd
+nfmd_t_max: 1.0
+nfmd_eval_num_s: 5
+mle_loss: false
+mle_loss_weight: 1.0
+source_energy_config:
+  _target_: transferable_samplers.utils.dataclasses.SourceEnergyConfig
+  sample_batch_size: 128
+  energy_batch_size: 128
+  grad_batch_size: 128
+prior:
+  _target_: transferable_samplers.models.priors.normal_distribution.NormalDistribution
+  num_dimensions: ${data.num_dimensions}
+  mean_free: false
+optimizer:
+  _target_: transferable_samplers.optimizers.torch_muon.TorchMuon
+  _partial_: true
+  lr: 1e-4
+  muon_momentum: 0.95
+  muon_weight_decay: 0.1
+  muon_nesterov: true
+  adamw_betas: [0.9, 0.999]
+  adamw_weight_decay: 1e-4
