@@ -7,9 +7,4 @@ if (( $# < 2 || $# > 3 )); then
 fi
 NFM_PYTHON=${NFM_PYTHON:-python3}
 NFM_RUN_DIR=${3:-runs/imagenet64_nfmd}
-"$NFM_PYTHON" -m nfm.train --config configs/imagenet64_nfmd.yaml --data "$1" --workdir "$NFM_RUN_DIR"
-if [[ ${JAX_PROCESS_INDEX:-${SLURM_PROCID:-0}} == 0 ]]; then
-    NFM_CHECKPOINT=$("$NFM_PYTHON" -c 'from nfm.checkpoint import latest; import sys; print(latest(sys.argv[1]))' "$NFM_RUN_DIR")
-    "$NFM_PYTHON" -m nfm.evaluate --config configs/imagenet64_nfmd.yaml --checkpoint "$NFM_CHECKPOINT" \
-        --reference "$2" --output "$NFM_RUN_DIR/evaluation"
-fi
+"$NFM_PYTHON" -m nfm.train --config configs/imagenet64_nfmd.yaml --data "$1" --workdir "$NFM_RUN_DIR" --reference "$2"

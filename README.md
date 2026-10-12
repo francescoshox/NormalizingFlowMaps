@@ -8,7 +8,7 @@ codebase; upstream licenses and attribution are retained in [NOTICE](NOTICE).
 
 | Branch | Contents |
 | --- | --- |
-| `main` | JAX: CIFAR-10 NFMD, ImageNet-64 NFMD and two-stage ImageNet-64 NFMR |
+| `main` | JAX: single-time and two-time CIFAR-10 NFMD, ImageNet-64 NFMD and two-stage ImageNet-64 NFMR |
 | `boltzmann-generators` | PyTorch Boltzmann-generator release, with its original README |
 | `reflow-couplings` | Empty branch reserved for coupling-generation code |
 
@@ -94,11 +94,12 @@ offline weights file. Otherwise the weights are downloaded into
 
 ## One script per run
 
-Each launcher trains, resumes automatically from its latest complete
-checkpoint, and evaluates the final checkpoint with 50,000 samples:
+Each launcher trains, resumes automatically from its latest saved checkpoint,
+and evaluates periodically and at the end with 50,000 samples:
 
 ```bash
 bash scripts/cifar10_nfmd.sh data/cifar10/train data/cifar10_fid.npz
+bash scripts/cifar10_nfmd_twotime.sh data/cifar10/train data/cifar10_fid.npz
 bash scripts/imagenet64_nfmd.sh data/imagenet64/train data/imagenet64_fid.npz
 bash scripts/imagenet64_nfmr.sh /path/to/couplings.safetensors data/imagenet64_fid.npz
 ```
@@ -111,6 +112,7 @@ relative to that root. Set `NFM_PYTHON` to select a Python executable.
 | Recipe | Model | Global batch | Epochs | Learning rate | EMAs | Final evaluation |
 | --- | --- | --- | --- | --- | --- | --- |
 | CIFAR-10 NFMD | 256 channels, 8 blocks, 6 layers, patch 2; `s_max=0.10` | 256 | 960 | `4e-4`, 1,954-step warmup from `1e-6` | `0.9995`, `0.9999` | CFG 0 and 2.8 |
+| CIFAR-10 two-time NFMD | Same size, gated affine maps; Mix5050 | 256 | 1,500 | `4e-4`, 1,954-step warmup from `1e-6` | `0.9995`, `0.9999` | EMA `0.9999`; split `0.75`, unconditional CFG 0 then conditional CFG 3.2 |
 | ImageNet-64 NFMD | B/2; `s_max=0.15` | 256 | 300 | 25,000-step warmup to `4e-4`; cosine from epoch 150 to 200 down to `1e-4`; then constant | `0.9995`, `0.9999` | **CFG 3.3 only** |
 | ImageNet-64 NFMR: flow matching | B/2 | **512** | 200 | `4e-4`, constant | `0.999`, `0.9995`, `0.9999` | Optional 50-step Euler evaluation |
 | ImageNet-64 NFMR: mean flow | B/2, initialized from flow-matching EMA | **512** | 25 | `1e-4`, constant | `0.999`, `0.9995`, `0.9999` | One-step generation, CFG 4.5 on interval `[0.5,0.9]` (provisional) |
@@ -118,8 +120,52 @@ relative to that root. Set `NFM_PYTHON` to select a Python executable.
 All recipes use adjusted Muon: momentum 0.95, Nesterov updates, five
 Newton–Schulz iterations and matrix weight decay 0.1. Embeddings use AdamW
 with decay `1e-4`; scalar/vector parameters use AdamW without decay. AdamW
-betas are `(0.9,0.95)`. NFMD uses class dropout 0.1 and the single-time
-distributional objective; there is no denoising step in its sampler.
+betas are `(0.9,0.95)`. NFMD uses class dropout 0.1 and distributional
+objectives; there is no denoising step in its sampler.
+
+Both CIFAR recipes and ImageNet NFMD evaluate every **50 epochs**.
+NFMR flow matching evaluates every **50 epochs**, and mean flow every
+**5 epochs**. A final evaluation always runs, even if the last epoch is not
+a multiple of the interval (for example, CIFAR single-time finishes at 960).
+`evaluation.every_epochs: 0` disables intermediate FID but keeps final FID
+when a reference is provided. The train CLI accepts `--reference` for these
+evaluations; all launchers pass their FID reference automatically.
+
+Evaluation results are stored under `WORKDIR/evaluation/epoch_XXXX/` and
+logged to W&B when enabled. `WORKDIR/best_fid.json` identifies the lowest
+measured FID and its checkpoint, EMA and guidance. Evaluation checkpoints
+are retained, so this pointer keeps the best model available; `latest.json`
+continues to identify the recovery checkpoint. On resume, completed identical
+evaluation tuples are reused and unfinished tuples are rerun before training
+advances. Evaluation uses separate seeded random streams and does not change
+the training state. Short `--max-steps` probes do not run FID.
+
+### CIFAR-10 two-time NFMD
+
+The gated Mix5050 recipe uses one shared model and, from the first update,
+`0.5 * direct NLL + 0.5 * composed NLL`. Both terms use the full batch, with
+independently drawn noise/times and one shared label-dropout mask. Direct
+encoding uses `f(s,1)` with uniform `s` in `[0,1]`; composition uses
+`f(t,1)(f(s,t)(x_s))` with sorted uniform times and both log-determinants.
+In composition, `freeze_ft1` stops parameter gradients for the terminal
+map while retaining input gradients through it. No separate teacher, PSD,
+fine-tuning, training CFG or velocity loss is used.
+
+Affine scales and shifts are clipped at 1 and then multiplied by `t-s`,
+which guarantees the identity map at equal times. The two-step sampler
+inverts `f(0.75,1)` unconditionally and then `f(0,0.75)` conditionally, using
+the same EMA `0.9999` weights in both stages. CFG 3.2 is extra guidance with
+an autoregressive token ramp; the maximum standard conditional multiplier
+is 4.2. Evaluation uses seed 42 and balanced labels with training-set FID
+reference statistics. The original PyTorch checkpoint measured FID
+**6.04936494** with these inference settings. This release trains in BF16
+with FP32 weights/reductions and uses the existing complete-batch handling;
+it does not claim a newly reproduced JAX FID. See the provenance notes.
+
+The Boltzmann-generator branch already performs training-time validation:
+every 100 epochs for GYDPETGTWG and every 50 for transferable training.
+Its molecular evaluation recipes and callbacks are described in that
+branch's `docs/bgs.md`.
 
 NFMR's one launcher runs `flow_matching` first and then `mean_flow`, each in
 its own output directory. The handoff selects EMA `0.999` provisionally,
@@ -173,7 +219,8 @@ multiple hosts, set `JAX_COORDINATOR_ADDRESS`, `JAX_PROCESS_COUNT`,
 `JAX_PROCESS_INDEX`, and optionally `JAX_LOCAL_DEVICE_IDS`. Slurm allocations
 can use JAX's automatic discovery or `MASTER_ADDR`/`MASTER_PORT` together with
 `SLURM_NTASKS`/`SLURM_PROCID`. Every rank must see the same dataset and output
-directory and invoke the same launcher. Final evaluation runs only on rank 0.
+directory and invoke the same launcher. Periodic and final evaluation run
+on rank 0 using a local device; the other ranks wait before training resumes.
 
 Local JSONL logging is always enabled. W&B is optional:
 

@@ -34,6 +34,7 @@ objective:
   s_max: 0.15
   label_dropout: 0.1
 evaluation:
+  every_epochs: 50
   samples: 50000
   batch_size: 80
   cfg:

@@ -48,6 +48,7 @@ objective:
   cfg_scale_max: 7.0
   expand_batch_for_cfg: true
 evaluation:
+  every_epochs: 5
   samples: 50000
   batch_size: 80
   cfg:

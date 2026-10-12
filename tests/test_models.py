@@ -15,9 +15,13 @@ def perturbed(params):
     )
 
 
-@pytest.mark.parametrize("method", ["nfmd", "nfmr"])
+@pytest.mark.parametrize("method", ["nfmd", "nfmd_gated", "nfmr"])
 def test_nontrivial_inverse_and_analytic_logdet(method, tiny_config):
+    gated = method == "nfmd_gated"
+    method = "nfmd" if gated else method
     config = tiny_config(method)
+    if gated:
+        config["model"]["gated"] = True
     model = make_model(config)
     variables = {"params": perturbed(initialize(model, method, 42))}
     x = jax.random.normal(jax.random.PRNGKey(2), (1, 4, 4, 3)) * 0.1
@@ -39,6 +43,22 @@ def test_nontrivial_inverse_and_analytic_logdet(method, tiny_config):
         reconstructed, reverse_logdet = nfmr.reverse(variables, model, z, label, *args)
         np.testing.assert_allclose(logdet + reverse_logdet, 0, atol=2e-5)
     np.testing.assert_allclose(reconstructed, x, atol=3e-5, rtol=2e-4)
+
+
+@pytest.mark.parametrize("precision", ["fp32", "bf16"])
+def test_gated_identity_at_equal_times(precision, tiny_config):
+    config = tiny_config(precision=precision)
+    config["model"]["gated"] = True
+    model = make_model(config)
+    variables = {"params": perturbed(initialize(model, "nfmd", 42))}
+    x = jax.random.normal(jax.random.PRNGKey(8), (2, 4, 4, 3))
+    labels, time = jnp.array([0, -1]), jnp.array([0.15, 0.8])
+    z, logdet = model.apply(variables, x, labels, time, time)
+    np.testing.assert_array_equal(z, model.patchify(x))
+    np.testing.assert_array_equal(logdet, jnp.zeros(2))
+    np.testing.assert_array_equal(
+        nfmd.reverse(variables, model, z, labels, time, time, guidance=3.2), x
+    )
 
 
 @pytest.mark.parametrize("precision", ["fp32", "bf16"])

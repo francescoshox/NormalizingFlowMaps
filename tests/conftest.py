@@ -25,7 +25,7 @@ def tiny_config():
         config["training"].update(
             batch_size=2, epochs=1, warmup_steps=0, checkpoint_epochs=1, log_steps=1
         )
-        config["evaluation"].update(samples=4, batch_size=2)
+        config["evaluation"].update(samples=4, batch_size=2, every_epochs=0)
         if stage == "mean_flow":
             mean = load(
                 Path(__file__).parents[1] / "configs/imagenet64_nfmr_mean_flow.yaml"

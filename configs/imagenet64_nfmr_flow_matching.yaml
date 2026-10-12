@@ -35,6 +35,7 @@ objective:
   label_dropout: 0.1
   clip_target: true
 evaluation:
+  every_epochs: 50
   samples: 50000
   batch_size: 80
   cfg:

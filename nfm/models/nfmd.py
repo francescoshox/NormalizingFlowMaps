@@ -204,7 +204,7 @@ class NFMDMetaBlock(nn.Module):
         c_adaln = c_class + c_s + c_t
         return (c_attn, c_adaln)
 
-    def __call__(self, x, y, c_s, c_t, train: bool = True):
+    def __call__(self, x, y, c_s, c_t, train: bool = True, dt=None):
         """x: [B, T, C_in]; y: [B]; c_s, c_t: [B, channels]."""
         x_in = self.permutation(x)
         x = self.proj_in(x_in).astype(jnp.float32)
@@ -217,6 +217,9 @@ class NFMDMetaBlock(nn.Module):
         x = jnp.concatenate([jnp.zeros_like(x[:, :1]), x[:, :-1]], axis=1)
         x = jnp.clip(x.astype(jnp.float32), -self.clip_range, self.clip_range)
         alpha, mu = jnp.split(x, 2, axis=-1)
+        if dt is not None:
+            alpha = alpha * dt[:, None, None]
+            mu = mu * dt[:, None, None]
         x_new = (x_in - mu) * jnp.exp(-alpha)
         log_jacob = -alpha.mean(axis=(1, 2))
         x_new = self.permutation(x_new)
@@ -275,6 +278,7 @@ class NFMD(nn.Module):
     clip_range: float = 1.0
     position_embed: str = "learned"
     attn_impl: str = "einsum"
+    gated: bool = False
 
     def setup(self):
         patch_num = self.img_size // self.patch_size
@@ -313,7 +317,10 @@ class NFMD(nn.Module):
             C,
         )
         x = x.transpose(0, 1, 3, 2, 4, 5)
-        x = x.reshape(B, self.num_patches, self.patch_size * self.patch_size * C)
+        x = x.reshape(
+            B, (self.img_size // self.patch_size) ** 2,
+            self.patch_size * self.patch_size * C,
+        )
         return x
 
     def unpatchify(self, x):
@@ -344,12 +351,14 @@ class NFMD(nn.Module):
         c_t = self.time_embed_t(t)
         total_logdet = jnp.zeros((x.shape[0],), dtype=jnp.float32)
         for block in self.blocks:
-            x, logdet, _, _ = block(x, y, c_s, c_t)
+            x, logdet, _, _ = block(
+                x, y, c_s, c_t, dt=(t - s) if self.gated else None
+            )
             total_logdet += logdet
         return (x, total_logdet)
 
 
-def reverse_block(params, block, x, y, c_s, c_t, guidance=0):
+def reverse_block(params, block, x, y, c_s, c_t, guidance=0, dt=None):
     """Invert one NFMDMetaBlock autoregressively. c_s, c_t: [B, channels]."""
     x = block.permutation(x.astype(jnp.float32))
     B, T, C = x.shape
@@ -404,6 +413,9 @@ def reverse_block(params, block, x, y, c_s, c_t, guidance=0):
         w = guidance * (i + 1) / (T - 1)
         alpha_i = (1 + w) * alpha_i - w * alpha_i_u
         mu_i = (1 + w) * mu_i - w * mu_i_u
+        if dt is not None:
+            alpha_i = alpha_i * dt[:, None, None]
+            mu_i = mu_i * dt[:, None, None]
         x_sliced = jax.lax.dynamic_slice(
             x_step, (0, i + 1, 0), (x_step.shape[0], 1, x_step.shape[2])
         )
@@ -442,13 +454,17 @@ def reverse(params, nf, x, y, s, t, guidance=0):
             c_s,
             c_t,
             guidance=guidance,
+            dt=(t - s) if nf.gated else None,
         )
     x = nf.unpatchify(x)
     return x
 
 
-def generate(params, model, rng, n_sample, noise_level, guidance, image_idx=None):
-    """Sample from the one-time NFMD model: invert f_{s=0, t=1}. No denoising.
+def generate(
+    params, model, rng, n_sample, noise_level, guidance, image_idx=None,
+    split=None, first_guidance=0.0, first_step_unconditional=False,
+):
+    """Invert f(0,1), or a two-interval partition with shared weights. No denoising.
 
     ``noise_level`` is accepted for signature parity with the MLE sampler but is
     unused (NFMD has no score-based denoise step).
@@ -467,5 +483,15 @@ def generate(params, model, rng, n_sample, noise_level, guidance, image_idx=None
         y = (all_y + image_idx * n_sample) % model.num_classes
     s = jnp.zeros((n_sample,), dtype=jnp.float32)
     t = jnp.ones((n_sample,), dtype=jnp.float32)
+    if split is not None:
+        middle = jnp.full_like(s, split)
+        first_label = -jnp.ones_like(y) if first_step_unconditional else y
+        intermediate = reverse(
+            params, model, z, first_label, middle, t, guidance=first_guidance
+        )
+        return reverse(
+            params, model, model.patchify(intermediate), y, s, middle,
+            guidance=guidance,
+        )
     x = reverse(params, model, z, y, s, t, guidance=guidance)
     return x

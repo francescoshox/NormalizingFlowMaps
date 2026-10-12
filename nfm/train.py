@@ -19,6 +19,7 @@ from nfm.data import Dataset, epoch_indices, process_batch, prefetch_batches
 from nfm.objectives.nfmd import nfmd_train_step
 from nfm.objectives.nfmr import flow_matching_train_step, mean_flow_train_step
 from nfm.state import make_model, learning_rate, create_state
+from nfm.evaluate import TrainingEvaluator
 
 
 def initialize_distributed():
@@ -53,7 +54,11 @@ def make_step(config, schedule, steps_per_epoch):
     objective = config["objective"]
     if config["stage"] == "nfmd":
         function = nfmd_train_step
-        args.update(s_max=objective["s_max"], dropout_rate=objective["label_dropout"])
+        args.update(
+            s_max=objective["s_max"], dropout_rate=objective["label_dropout"],
+            variant=objective.get("variant", "single_time"),
+            freeze_ft1=objective.get("freeze_ft1", True),
+        )
     else:
         args.update(
             time_mu=objective["time_mu"],
@@ -113,8 +118,14 @@ def run(
     max_steps=None,
     wandb_project=None,
     max_seconds=None,
+    reference=None,
 ):
     initialize_distributed()
+    evaluation_interval = config["evaluation"].get("every_epochs", 0)
+    if evaluation_interval and reference is None and max_steps is None:
+        raise ValueError("Periodic FID requires --reference; set every_epochs=0 to disable")
+    if reference is not None and not Path(reference).is_file():
+        raise FileNotFoundError(f"FID reference not found: {reference}")
     global_batch = config["training"]["batch_size"]
     if global_batch % jax.device_count():
         raise ValueError(
@@ -136,6 +147,44 @@ def run(
     model = make_model(config)
     schedule = learning_rate(config["training"], steps_per_epoch)
     workdir = Path(workdir)
+    evaluator = (
+        TrainingEvaluator(config, reference, workdir)
+        if reference is not None and max_steps is None and jax.process_index() == 0
+        else None
+    )
+
+    def evaluation_due(step):
+        epoch = step // steps_per_epoch
+        return (
+            reference is not None and max_steps is None and step > 0
+            and step % steps_per_epoch == 0
+            and (step == total_steps or (evaluation_interval and epoch % evaluation_interval == 0))
+        )
+
+    def evaluate_saved(path, step, tracker=None):
+        multihost_utils.sync_global_devices(f"evaluation-{step}-before")
+        failed = 0
+        if jax.process_index() == 0:
+            try:
+                results = evaluator(path, step // steps_per_epoch)
+                values = {
+                    f"eval/fid/ema_{r['ema']}/cfg_{r['cfg']}": r["fid"]
+                    for r in results
+                }
+                values["eval/epoch"] = step // steps_per_epoch
+                print(json.dumps(dict(event="evaluation", step=step, **values)), flush=True)
+                if tracker:
+                    tracker.log(values, step=step, commit=False)
+            except Exception as error:
+                print(f"Evaluation failed at step {step}: {error}", flush=True)
+                failed = 1
+        failed = int(multihost_utils.broadcast_one_to_all(np.asarray(failed, np.int32)))
+        if failed:
+            raise RuntimeError(
+                f"Evaluation failed at step {step}; rerun to resume from the saved checkpoint"
+            )
+        multihost_utils.sync_global_devices(f"evaluation-{step}-after")
+
     recovery = checkpoint.latest(workdir)
     params = None
     if recovery is None and init_from:
@@ -168,6 +217,8 @@ def run(
         state = checkpoint.restore(recovery, state)
     first_step = int(state.step)
     if first_step >= total_steps:
+        if evaluation_due(first_step):
+            evaluate_saved(recovery, first_step)
         if jax.process_index() == 0:
             print(f"{config['stage']} already complete: {recovery}")
         return recovery
@@ -223,81 +274,92 @@ def run(
         value: signal.signal(value, request_stop)
         for value in (signal.SIGTERM, signal.SIGUSR1)
     }
-    for epoch in range(first_step // steps_per_epoch, config["training"]["epochs"]):
-        order = epoch_indices(
-            dataset.length,
-            epoch_samples,
-            config["seed"],
-            epoch,
-            global_batch,
-            jax.process_count(),
-            jax.process_index(),
-        )
-        offset = (
-            first_step % steps_per_epoch
-            if epoch == first_step // steps_per_epoch
-            else 0
-        )
-        for index, raw_batch in enumerate(
-            prefetch_batches(dataset, order[offset:]), offset
-        ):
-            batch = {
-                key: array.reshape(local_devices, -1, *array.shape[1:])
-                for key, array in raw_batch.items()
-            }
-            requested = stop_requested or (
-                max_seconds is not None and time.monotonic() - started >= max_seconds
+    try:
+        if recovery and evaluation_due(first_step):
+            # A crash can occur after checkpoint publication but before all FID
+            # tuples finish. Repair that boundary before taking another train step.
+            evaluate_saved(recovery, first_step, tracker)
+        for epoch in range(first_step // steps_per_epoch, config["training"]["epochs"]):
+            order = epoch_indices(
+                dataset.length,
+                epoch_samples,
+                config["seed"],
+                epoch,
+                global_batch,
+                jax.process_count(),
+                jax.process_index(),
             )
-            state, metrics = p_step(state, batch, rng, np.asarray(requested, np.int32))
-            stopping = bool(
-                np.asarray(jax.device_get(metrics.pop("stop_requested")))[0]
+            offset = (
+                first_step % steps_per_epoch
+                if epoch == first_step // steps_per_epoch
+                else 0
             )
-            step = epoch * steps_per_epoch + index + 1
-            if step % config["training"]["log_steps"] == 0 or step == stop_step:
-                values = {
-                    key: float(np.asarray(value)[0])
-                    for key, value in jax.device_get(metrics).items()
+            for index, raw_batch in enumerate(
+                prefetch_batches(dataset, order[offset:]), offset
+            ):
+                batch = {
+                    key: array.reshape(local_devices, -1, *array.shape[1:])
+                    for key, array in raw_batch.items()
                 }
-                if not all(np.isfinite(value) for value in values.values()):
-                    raise FloatingPointError(
-                        f"Nonfinite training metrics at step {step}: {values}"
-                    )
-                if jax.process_index() == 0:
-                    record = dict(
-                        step=step,
-                        epoch=step / steps_per_epoch,
-                        seconds=time.monotonic() - started,
-                        **values,
-                    )
-                    with (workdir / "metrics.jsonl").open("a") as handle:
-                        handle.write(json.dumps(record) + "\n")
-                    print(json.dumps(record), flush=True)
-                    if tracker:
-                        tracker.log(values, step=step)
-            save_epoch = (
-                step % steps_per_epoch == 0
-                and (epoch + 1) % config["training"]["checkpoint_epochs"] == 0
-            )
-            if save_epoch or step == stop_step or stopping:
-                multihost_utils.sync_global_devices(f"save-{step}-before")
-                if jax.process_index() == 0:
-                    last_checkpoint = checkpoint.save(
-                        workdir,
-                        jax_utils.unreplicate(state),
-                        dict(metadata, step=step, complete=step == total_steps),
-                    )
-                multihost_utils.sync_global_devices(f"save-{step}-after")
-            if step == stop_step or stopping:
-                for value, handler in previous_handlers.items():
-                    signal.signal(value, handler)
-                if tracker:
-                    tracker.finish()
-                if stopping and step < total_steps:
-                    # A launcher must stop here, rather than evaluating an
-                    # unfinished recipe or advancing to the next NFMR stage.
-                    raise SystemExit(75)
-                return checkpoint.latest(workdir)
-    return last_checkpoint
+                requested = stop_requested or (
+                    max_seconds is not None and time.monotonic() - started >= max_seconds
+                )
+                state, metrics = p_step(state, batch, rng, np.asarray(requested, np.int32))
+                stopping = bool(
+                    np.asarray(jax.device_get(metrics.pop("stop_requested")))[0]
+                )
+                step = epoch * steps_per_epoch + index + 1
+                if step % config["training"]["log_steps"] == 0 or step == stop_step:
+                    values = {
+                        key: float(np.asarray(value)[0])
+                        for key, value in jax.device_get(metrics).items()
+                    }
+                    if not all(np.isfinite(value) for value in values.values()):
+                        raise FloatingPointError(
+                            f"Nonfinite training metrics at step {step}: {values}"
+                        )
+                    if jax.process_index() == 0:
+                        record = dict(
+                            step=step,
+                            epoch=step / steps_per_epoch,
+                            seconds=time.monotonic() - started,
+                            **values,
+                        )
+                        with (workdir / "metrics.jsonl").open("a") as handle:
+                            handle.write(json.dumps(record) + "\n")
+                        print(json.dumps(record), flush=True)
+                        if tracker:
+                            tracker.log(values, step=step, commit=False)
+                save_epoch = (
+                    step % steps_per_epoch == 0
+                    and (epoch + 1) % config["training"]["checkpoint_epochs"] == 0
+                )
+                eval_due = evaluation_due(step) and not stopping
+                if save_epoch or step == stop_step or stopping or eval_due:
+                    multihost_utils.sync_global_devices(f"save-{step}-before")
+                    if jax.process_index() == 0:
+                        last_checkpoint = checkpoint.save(
+                            workdir,
+                            jax_utils.unreplicate(state),
+                            dict(metadata, step=step, complete=step == total_steps),
+                        )
+                    multihost_utils.sync_global_devices(f"save-{step}-after")
+                if eval_due:
+                    # Every rank uses the same immutable shared checkpoint path.
+                    evaluate_saved(workdir / f"checkpoint_{step:09d}", step, tracker)
+                if step == stop_step or stopping:
+                    if stopping and step < total_steps:
+                        # A launcher must stop here, rather than evaluating an
+                        # unfinished recipe or advancing to the next NFMR stage.
+                        raise SystemExit(75)
+                    return checkpoint.latest(workdir)
+        return last_checkpoint
+
+    finally:
+        for value, handler in previous_handlers.items():
+            signal.signal(value, handler)
+        if tracker:
+            tracker.finish()
 
 
 def main():
@@ -305,6 +367,7 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--workdir", required=True)
+    parser.add_argument("--reference", help="FID reference for periodic and final evaluation")
     parser.add_argument("--init-from")
     parser.add_argument("--init-ema")
     parser.add_argument(
@@ -329,6 +392,7 @@ def main():
         args.max_steps,
         args.wandb_project,
         args.max_seconds,
+        args.reference,
     )
 
 
