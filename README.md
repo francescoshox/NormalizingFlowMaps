@@ -1,11 +1,17 @@
 # NFMD: Boltzmann generators
 
-Training and numerical evaluation of NFMD for GYDPETGTWG and transferable
-peptide Boltzmann generators. See the [paper](https://openreview.net/forum?id=guBm2gNlxU)
-and the [Boltzmann generator guide](docs/bgs.md) for configurations and reproduction commands.
+![Energy distributions and TICA projections for NFMD Boltzmann generators](assets/boltzmann-generators.png)
 
-The main entry points are in `scripts/nfmd/`. Training defaults to seed 47;
-evaluation defaults to seed 50 and proposal temperature T=1.00.
+*Energy distributions for single-system and transferable peptide models, and TICA projections comparing MD, TARFlow, and NFM-D.*
+
+PyTorch implementation of the single-system and transferable peptide
+Boltzmann-generator experiments in
+[Normalizing Flow Maps](https://openreview.net/forum?id=guBm2gNlxU).
+Image-generation code is on the [`main`](https://github.com/francescoshox/NormalizingFlowMaps/tree/main) branch.
+
+## Install
+
+Use Python 3.11+ and a CUDA GPU.
 
 ```bash
 python -m venv .venv
@@ -14,22 +20,29 @@ pip install -e .
 cp .env.example .env
 # Fill WANDB_PROJECT and WANDB_ENTITY in .env.
 wandb login
-bash scripts/nfmd/train_GYDPETGTWG.sh
-bash scripts/nfmd/eval_GYDPETGTWG.sh --checkpoint /path/to/epoch_2699.ckpt
 ```
 
-Python 3.11+ and CUDA GPUs are required for the full molecular experiments.
-The scripts run continuously and support one or multiple nodes. Dataset downloads,
-normalization, molecular energies, EMA checkpoints, SNIS/SMC, and quantitative
-metrics are included. W&B records the resolved configuration and metrics;
-JSON/CSV results are also saved locally.
+## Runs
 
-Standard MLE and flow matching recipes are available under
-`configs/experiment/baselines/`; see [the baseline guide](docs/baselines.md).
-The GYDPETGTWG MLE training launcher is `scripts/baselines/train_mle_GYDPETGTWG.sh`.
+The scripts download and prepare the datasets automatically.
 
-This release currently covers molecular experiments. The image experiments will
-be documented with their code when added.
+Train a single-system model on GYDPETGTWG or a transferable peptide model:
+
+```bash
+bash scripts/nfmd/train_GYDPETGTWG.sh
+bash scripts/nfmd/train_transferable.sh
+```
+
+Evaluate a saved checkpoint:
+
+```bash
+bash scripts/nfmd/eval_GYDPETGTWG.sh --checkpoint /path/to/GYDPETGTWG.ckpt
+bash scripts/nfmd/eval_transferable.sh --checkpoint /path/to/transferable.ckpt
+```
+
+See [docs/bgs.md](docs/bgs.md) for configurations and evaluation options.
+Standard MLE and flow matching recipes are described in
+[docs/baselines.md](docs/baselines.md).
 
 ## Attribution and license
 
