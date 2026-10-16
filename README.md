@@ -1,6 +1,10 @@
 # Normalizing Flow Maps
 
-Minimal JAX implementation of the image experiments in
+![NFM-D and NFM-R image samples before and after RL post-training](assets/image-generation.png)
+
+*Image generation and post-training: NFM-D golden retrievers and NFM-R bighorn sheep, before and after RL.*
+
+JAX implementation of the image experiments in
 [**Normalizing Flow Maps**](https://openreview.net/pdf?id=guBm2gNlxU).
 The models combine flow-map training with autoregressive normalizing flows.
 This implementation branches from the public [BiFlow](https://github.com/Lyy-iiis/BiFlow)
@@ -9,12 +13,11 @@ codebase; upstream licenses and attribution are retained in [NOTICE](NOTICE).
 | Branch | Contents |
 | --- | --- |
 | `main` | JAX: single-time and two-time CIFAR-10 NFMD, ImageNet-64 NFMD and two-stage ImageNet-64 NFMR |
-| `boltzmann-generators` | PyTorch Boltzmann-generator release, with its original README |
+| `boltzmann-generators` | PyTorch: single-system and transferable peptide Boltzmann generators |
 | `reflow-couplings` | Empty branch reserved for coupling-generation code |
 
 NFM-D and NFM-R in the paper are named **NFMD** and **NFMR** in this code.
-NFMR contains both **flow matching** and **mean flow**. CIFAR-10 NFMR is outside
-this release's scope.
+NFMR trains in two stages: flow matching, then mean flow.
 
 ## Install
 
@@ -38,44 +41,21 @@ pip install -e '.[eval]'
 pip install -e '.[nfmr]'
 ```
 
-For CPU development, replace `.[cuda]` with `.[dev]`. All image models and
-training objectives use JAX/Flax. Training defaults to BF16 computation with
-FP32 model weights, residuals and likelihood reductions. The release uses
-portable XLA attention and native JAX directional derivatives; the original
-cluster-specific FA4 kernels are not bundled. This preserves the architecture
-and objectives, but is not a bit-for-bit replay of those kernels and may require
-more accelerator memory. Run-specific provenance and outstanding checks are
-listed in [docs/provenance.md](docs/provenance.md).
+For CPU development, replace `.[cuda]` with `.[dev]`.
 
 ## Data
 
-Prepare the training pixels:
+Prepare CIFAR-10 or your local ImageNet training images:
 
 ```bash
 python -m nfm.prepare cifar10 --output data/cifar10/train
 python -m nfm.prepare imagenet64 --input /path/to/imagenet/train --output data/imagenet64/train
 ```
 
-ImageNet must be obtained separately and arranged as `train/<class>/*`.
-Preparation uses the original progressive BOX/BICUBIC center crop and writes
-an alphabetical class mapping. Existing preprocessed pixel safetensors files
-can be used directly.
+ImageNet should be arranged as `train/<class>/*`. NFMR requires paired image/noise
+couplings; the public coupling download is not yet available.
 
-A dataset is either a safetensors file or a directory of memory-mapped NumPy
-arrays:
-
-| Key/file | Shape and type | Meaning |
-| --- | --- | --- |
-| `x1` / `x1.npy` | `[N,H,W,3]`, uint8 | RGB image |
-| `label` / `label.npy` | `[N]`, integer | Class ID |
-| `x0` / `x0.npy` | `[N,H,W,3]`, floating point | Paired Gaussian source, required for NFMR |
-
-NFMR uses the existing EDM2 coupling pool, with 1,280,512 globally shuffled
-examples per epoch. It requires stored paired `x0`; Gaussian sources are not
-silently regenerated. **TODO:** Add the public coupling download or exact
-generation instructions once the collaborator's assets are available.
-
-Compute a compatible FID reference from the real training pixels:
+Create the FID reference for the dataset you use:
 
 ```bash
 python -m nfm.prepare fid-reference --data data/cifar10/train \
@@ -84,18 +64,10 @@ python -m nfm.prepare fid-reference --data data/imagenet64/train \
   --image-size 64 --output data/imagenet64_fid.npz
 ```
 
-The default uses every real image, the inherited Inception FID weights, and the
-original `grid_sample` resize. For comparing to a historical run, supply its
-original reference statistics instead; preprocessing and reference selection
-affect FID. `--weights /path/to/inception_v3_weights_fid.pickle` supports an
-offline weights file. Otherwise the weights are downloaded into
-`JAX_FID_CACHE_DIR` (default: the system temporary directory). Set
-`JAX_FID_OFFLINE=1` to require already cached weights.
-
 ## One script per run
 
-Each launcher trains, resumes automatically from its latest saved checkpoint,
-and evaluates periodically and at the end with 50,000 samples:
+Each launcher trains, resumes from its latest checkpoint, and evaluates
+periodically and at the end with 50,000 samples:
 
 ```bash
 bash scripts/cifar10_nfmd.sh data/cifar10/train data/cifar10_fid.npz
@@ -104,89 +76,20 @@ bash scripts/imagenet64_nfmd.sh data/imagenet64/train data/imagenet64_fid.npz
 bash scripts/imagenet64_nfmr.sh /path/to/couplings.safetensors data/imagenet64_fid.npz
 ```
 
-An optional third argument sets the output directory. Keep large datasets and
-training outputs on storage suitable for the experiment. Launchers resolve
-their configs from the repository root. Relative data paths are therefore
-relative to that root. Set `NFM_PYTHON` to select a Python executable.
+An optional third argument sets the output directory. The NFMR launcher runs
+flow matching followed by mean flow. Full training settings are in the linked configs.
 
-| Recipe | Model | Global batch | Epochs | Learning rate | EMAs | Final evaluation |
-| --- | --- | --- | --- | --- | --- | --- |
-| CIFAR-10 NFMD | 256 channels, 8 blocks, 6 layers, patch 2; `s_max=0.10` | 256 | 960 | `4e-4`, 1,954-step warmup from `1e-6` | `0.9995`, `0.9999` | CFG 0 and 2.8 |
-| CIFAR-10 two-time NFMD | Same size, gated affine maps; Mix5050 | 256 | 1,500 | `4e-4`, 1,954-step warmup from `1e-6` | `0.9995`, `0.9999` | EMA `0.9999`; split `0.75`, unconditional CFG 0 then conditional CFG 3.2 |
-| ImageNet-64 NFMD | B/2; `s_max=0.15` | 256 | 300 | 25,000-step warmup to `4e-4`; cosine from epoch 150 to 200 down to `1e-4`; then constant | `0.9995`, `0.9999` | **CFG 3.3 only** |
-| ImageNet-64 NFMR: flow matching | B/2 | **512** | 200 | `4e-4`, constant | `0.999`, `0.9995`, `0.9999` | Optional 50-step Euler evaluation |
-| ImageNet-64 NFMR: mean flow | B/2, initialized from flow-matching EMA | **512** | 25 | `1e-4`, constant | `0.999`, `0.9995`, `0.9999` | One-step generation, CFG 4.5 on interval `[0.5,0.9]` (provisional) |
-
-All recipes use adjusted Muon: momentum 0.95, Nesterov updates, five
-Newton–Schulz iterations and matrix weight decay 0.1. Embeddings use AdamW
-with decay `1e-4`; scalar/vector parameters use AdamW without decay. AdamW
-betas are `(0.9,0.95)`. NFMD uses class dropout 0.1 and distributional
-objectives; there is no denoising step in its sampler.
-
-Both CIFAR recipes and ImageNet NFMD evaluate every **50 epochs**.
-NFMR flow matching evaluates every **50 epochs**, and mean flow every
-**5 epochs**. A final evaluation always runs, even if the last epoch is not
-a multiple of the interval (for example, CIFAR single-time finishes at 960).
-`evaluation.every_epochs: 0` disables intermediate FID but keeps final FID
-when a reference is provided. The train CLI accepts `--reference` for these
-evaluations; all launchers pass their FID reference automatically.
-
-Evaluation results are stored under `WORKDIR/evaluation/epoch_XXXX/` and
-logged to W&B when enabled. `WORKDIR/best_fid.json` identifies the lowest
-measured FID and its checkpoint, EMA and guidance. Evaluation checkpoints
-are retained, so this pointer keeps the best model available; `latest.json`
-continues to identify the recovery checkpoint. On resume, completed identical
-evaluation tuples are reused and unfinished tuples are rerun before training
-advances. Evaluation uses separate seeded random streams and does not change
-the training state. Short `--max-steps` probes do not run FID.
-
-### CIFAR-10 two-time NFMD
-
-The gated Mix5050 recipe uses one shared model and, from the first update,
-`0.5 * direct NLL + 0.5 * composed NLL`. Both terms use the full batch, with
-independently drawn noise/times and one shared label-dropout mask. Direct
-encoding uses `f(s,1)` with uniform `s` in `[0,1]`; composition uses
-`f(t,1)(f(s,t)(x_s))` with sorted uniform times and both log-determinants.
-In composition, `freeze_ft1` stops parameter gradients for the terminal
-map while retaining input gradients through it. No separate teacher, PSD,
-fine-tuning, training CFG or velocity loss is used.
-
-Affine scales and shifts are clipped at 1 and then multiplied by `t-s`,
-which guarantees the identity map at equal times. The two-step sampler
-inverts `f(0.75,1)` unconditionally and then `f(0,0.75)` conditionally, using
-the same EMA `0.9999` weights in both stages. CFG 3.2 is extra guidance with
-an autoregressive token ramp; the maximum standard conditional multiplier
-is 4.2. Evaluation uses seed 42 and balanced labels with training-set FID
-reference statistics. The original PyTorch checkpoint measured FID
-**6.04936494** with these inference settings. This release trains in BF16
-with FP32 weights/reductions and uses the existing complete-batch handling;
-it does not claim a newly reproduced JAX FID. See the provenance notes.
-
-The Boltzmann-generator branch already performs training-time validation:
-every 100 epochs for GYDPETGTWG and every 50 for transferable training.
-Its molecular evaluation recipes and callbacks are described in that
-branch's `docs/bgs.md`.
-
-NFMR's one launcher runs `flow_matching` first and then `mean_flow`, each in
-its own output directory. The handoff selects EMA `0.999` provisionally,
-resets the optimizer, step count and destination EMAs, and starts the
-25-epoch schedule. A destination recovery checkpoint takes precedence over
-fresh initialization. The remaining NFMR details are explicit **TODOs** in
-[the provenance notes](docs/provenance.md).
-
-The train CLI supports `--max-steps` for short probes. A probe checkpoint
-records `complete: false`; it cannot be mistaken for a finished paper run or
-used automatically as a completed NFMR first stage. Checkpoints contain the
-optimizer, online weights, all EMAs, step, seed, config and data identity.
-Restarting uses the same shuffled epoch and resumes at the next global batch.
-`SIGTERM`/`SIGUSR1` or a positive `NFM_MAX_SECONDS` request a synchronized
-checkpoint and exit status 75 when training is unfinished. Set the time budget
-below the scheduler's limit to allow checkpoint writing, then rerun the same
-launcher to resume. An unfinished stage does not advance or evaluate.
+| Recipe | Model | EMAs | Sampling |
+| --- | --- | --- | --- |
+| [CIFAR-10 NFMD](configs/cifar10_nfmd.yaml) | 256 channels, 8 blocks, 6 layers, patch 2 | `0.9995`, `0.9999` | One step; CFG 0 and 2.8 |
+| [CIFAR-10 two-time NFMD](configs/cifar10_nfmd_twotime.yaml) | Same size, gated affine maps | `0.9995`, `0.9999` | Two steps; EMA `0.9999`, split `0.75`, unconditional CFG 0 then conditional CFG 3.2 |
+| [ImageNet-64 NFMD](configs/imagenet64_nfmd.yaml) | B/2 | `0.9995`, `0.9999` | One step; CFG 3.3 |
+| [ImageNet-64 NFMR: flow matching](configs/imagenet64_nfmr_flow_matching.yaml) | B/2 | `0.999`, `0.9995`, `0.9999` | 50-step Euler; CFG 5.0 |
+| [ImageNet-64 NFMR: mean flow](configs/imagenet64_nfmr_mean_flow.yaml) | B/2 | `0.999`, `0.9995`, `0.9999` | One step; CFG 4.5 on `[0.5, 0.9]` (provisional) |
 
 ## Sampling and evaluation
 
-Use the checkpoint directory reported in `<workdir>/latest.json`:
+Use a saved checkpoint to compute FID or generate images:
 
 ```bash
 python -m nfm.evaluate --config configs/imagenet64_nfmd.yaml \
@@ -195,57 +98,10 @@ python -m nfm.evaluate --config configs/imagenet64_nfmd.yaml \
 python -m nfm.evaluate --config configs/imagenet64_nfmd.yaml \
   --checkpoint /path/to/checkpoint --sample-only --samples 64 \
   --ema 0.9999 --output runs/imagenet64_nfmd/samples
-python -m nfm.evaluate --config configs/cifar10_nfmd.yaml \
-  --checkpoint /path/to/checkpoint --likelihood-data /path/to/cifar10/test \
-  --samples 10000 --output runs/cifar10_nfmd/likelihood
 ```
 
-FID records include the reference and Inception-weight SHA256 hashes.
-Completed evaluations with identical settings are skipped on restart.
-Evaluation runs on one process/device, independently of distributed training.
-Likelihood uses uniform dequantization and unguided conditional density.
-NFMR additionally requires a sequential inverse, which can be numerically
-unstable for the paper's non-invertible-in-finite-precision recipe; its model
-module exposes round-trip diagnostics.
-
-The best completed epoch-300 ImageNet NFMD evaluation reported for the source
-run was **FID 4.5947366**, EMA **0.9999**, CFG **3.3**. This is historical evidence,
-not a new measurement of this extracted release. No guidance sweep is included.
-
-## Distributed training and logging
-
-The batch sizes above are global, across all devices and processes. For
-multiple hosts, set `JAX_COORDINATOR_ADDRESS`, `JAX_PROCESS_COUNT`,
-`JAX_PROCESS_INDEX`, and optionally `JAX_LOCAL_DEVICE_IDS`. Slurm allocations
-can use JAX's automatic discovery or `MASTER_ADDR`/`MASTER_PORT` together with
-`SLURM_NTASKS`/`SLURM_PROCID`. Every rank must see the same dataset and output
-directory and invoke the same launcher. Periodic and final evaluation run
-on rank 0 using a local device; the other ranks wait before training resumes.
-
-Local JSONL logging is always enabled. W&B is optional:
-
-```bash
-pip install -e '.[wandb]'
-WANDB_PROJECT=your-project WANDB_ENTITY=your-entity bash scripts/cifar10_nfmd.sh DATA REFERENCE
-```
-
-No entity, personal project, cluster path or credential is embedded in the
-release. W&B uses neutral recipe names. Authentication comes from your own
-environment or W&B login.
-
-## Development
-
-```bash
-pip install -e '.[dev]'
-JAX_PLATFORMS=cpu pytest -q
-ruff check .
-```
-
-Tests exercise nontrivial inverses and Jacobian determinants, the NFMR
-directional derivative in FP32/BF16, EMA updates, deterministic resume,
-coupling sharding, stage handoff and streaming FID statistics. Full training,
-multi-host accelerator performance and the paper's FIDs require the datasets
-and accelerator runs.
+Implementation notes and remaining reproduction details are in
+[docs/provenance.md](docs/provenance.md).
 
 ## License
 

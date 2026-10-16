@@ -35,14 +35,14 @@ as the best completed result, without claiming an exhaustive optimum.
 - BF16 computation retained. Portable XLA attention replaces the unbundled
   cluster FA4 implementation; NFMR uses native JAX JVP through that attention.
 - W&B optional, with account/project supplied by the user at runtime.
-- CIFAR two-time NFMD: 1,500 epochs, batch 256, LR `4e-4`, 1,954-step
+- CIFAR two-time NFMD: 1,000 epochs, batch 256, LR `4e-4`, 1,954-step
   warmup, affine clip 1, class dropout 0.1, uniform times over `[0,1]`.
   Both losses use the full batch with weight 0.5 from epoch zero; the
   composed terminal map uses stopped parameters, not a detached input.
   No PSD or fine-tuning. Track EMAs 0.9995/0.9999; evaluate 0.9999 only.
 - The two-time source winner used FP32 and 294,000 updates. At the user's
   direction the JAX recipe uses standard BF16 compute/FP32 weights and the
-  existing dropped-partial-batch policy (292,500 updates over 1,500 epochs).
+  existing dropped-partial-batch policy (195,000 updates over 1,000 epochs).
   These are intentional release choices, not unresolved TODOs.
 - Both CIFAR recipes and ImageNet NFMD evaluate every 50 epochs. NFMR
   flow matching evaluates every 50 epochs; mean flow every 5. All perform

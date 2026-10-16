@@ -18,7 +18,7 @@ model:
   clip_range: 1.0
   gated: true
 training:
-  epochs: 1500
+  epochs: 1000
   batch_size: 256
   lr: 0.0004
   warmup_steps: 1954
