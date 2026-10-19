@@ -5,7 +5,7 @@
 *Image generation and post-training: NFM-D golden retrievers and NFM-R bighorn sheep, before and after RL.*
 
 JAX implementation of the image experiments in
-[**Normalizing Flow Maps**](https://openreview.net/pdf?id=guBm2gNlxU).
+[**Normalizing Flow Maps**](https://arxiv.org/abs/2610.22711).
 The models combine flow-map training with autoregressive normalizing flows.
 This implementation branches from the public [BiFlow](https://github.com/Lyy-iiis/BiFlow)
 codebase; upstream licenses and attribution are retained in [NOTICE](NOTICE).
@@ -102,6 +102,26 @@ python -m nfm.evaluate --config configs/imagenet64_nfmd.yaml \
 
 Implementation notes and remaining reproduction details are in
 [docs/provenance.md](docs/provenance.md).
+
+## Citation
+
+If you use this code, please cite:
+
+```bibtex
+@misc{ruscio2026normalizingflowmaps,
+  title         = {Normalizing Flow Maps},
+  author        = {Francesco M. Ruscio and Timothy James Hitge and
+                   Fred Zhangzhi Peng and Danyal Rehman and
+                   Zander W. Blasingame and Nicholas M. Boffi and
+                   Michael M. Bronstein and Alexander Tong and
+                   Avishek Joey Bose},
+  year          = {2026},
+  eprint        = {2610.22711},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2610.22711}
+}
+```
 
 ## License
 
