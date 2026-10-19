@@ -6,7 +6,7 @@
 
 PyTorch implementation of the single-system and transferable peptide
 Boltzmann-generator experiments in
-[Normalizing Flow Maps](https://openreview.net/forum?id=guBm2gNlxU).
+[Normalizing Flow Maps](https://arxiv.org/abs/2610.22711).
 Image-generation code is on the [`main`](https://github.com/francescoshox/NormalizingFlowMaps/tree/main) branch.
 
 ## Install
@@ -43,6 +43,26 @@ bash scripts/nfmd/eval_transferable.sh --checkpoint /path/to/transferable.ckpt
 See [docs/bgs.md](docs/bgs.md) for configurations and evaluation options.
 Standard MLE and flow matching recipes are described in
 [docs/baselines.md](docs/baselines.md).
+
+## Citation
+
+If you use this code, please cite:
+
+```bibtex
+@misc{ruscio2026normalizingflowmaps,
+  title         = {Normalizing Flow Maps},
+  author        = {Francesco M. Ruscio and Timothy James Hitge and
+                   Fred Zhangzhi Peng and Danyal Rehman and
+                   Zander W. Blasingame and Nicholas M. Boffi and
+                   Michael M. Bronstein and Alexander Tong and
+                   Avishek Joey Bose},
+  year          = {2026},
+  eprint        = {2610.22711},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2610.22711}
+}
+```
 
 ## Attribution and license
 
